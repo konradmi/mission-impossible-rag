@@ -7,6 +7,7 @@ import { formatDocumentsAsString } from 'langchain/util/document';
 import { RunnableSequence } from "@langchain/core/runnables";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from '@langchain/core/output_parsers';
+import { LangChainAdapter } from 'ai';
 
 const PINECONE_API_KEY = process.env.PINECONE_API_KEY!;
 const PINECONE_INDEX = process.env.PINECONE_INDEX!;
@@ -35,10 +36,13 @@ const promptTemplate = ChatPromptTemplate.fromMessages([
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt } = await req.json();
-    if (!prompt || typeof prompt !== 'string') {
-      return NextResponse.json({ error: 'Missing or invalid prompt' }, { status: 400 });
+    const { messages } = await req.json();
+
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage || lastMessage.role !== 'user') {
+      return NextResponse.json({ error: 'Last message must be from user' }, { status: 400 });
     }
+    const prompt = lastMessage.content;
 
     const retriever = await createRetriever();
 
@@ -66,9 +70,9 @@ export async function POST(req: NextRequest) {
       outputParser,
     ]);
 
-    const response = await generationChain.invoke({ question: prompt });
+    const stream = await generationChain.stream({ question: prompt });
 
-    return NextResponse.json({ answer: response });
+    return LangChainAdapter.toDataStreamResponse(stream);
   } catch (error) {
     return NextResponse.json({ error }, { status: 500 });
   }
